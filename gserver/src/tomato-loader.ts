@@ -63,9 +63,16 @@ function convertPattern(pattern: string): { regexPattern: string; displayText: s
  */
 export async function loadStepsFromTomato(): Promise<TomatoStepDefinition[]> {
     try {
+        // Use shell: true to inherit user's PATH (needed for VSCode which doesn't inherit shell env)
         const { stdout } = await execAsync('tomato steps --json', {
             timeout: 10000,
             maxBuffer: 1024 * 1024, // 1MB buffer
+            shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
+            env: {
+                ...process.env,
+                // Add common paths where tomato might be installed
+                PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/go/bin:${process.env.HOME}/.local/bin`,
+            },
         });
 
         const modules: TomatoModuleJSON[] = JSON.parse(stdout);
@@ -100,7 +107,14 @@ export async function loadStepsFromTomato(): Promise<TomatoStepDefinition[]> {
  */
 export async function isTomatoAvailable(): Promise<boolean> {
     try {
-        await execAsync('tomato --version', { timeout: 5000 });
+        await execAsync('tomato --version', {
+            timeout: 5000,
+            shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
+            env: {
+                ...process.env,
+                PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${process.env.HOME}/go/bin:${process.env.HOME}/.local/bin`,
+            },
+        });
         return true;
     } catch {
         return false;
