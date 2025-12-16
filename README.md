@@ -1,180 +1,103 @@
-# Cucumber Full Language Support
-VSCode Cucumber (Gherkin) Language Support + Format + Steps/PageObjects Autocomplete
+# Tomato Gherkin Autocomplete
 
-## This extension adds rich language support for the Cucumber (Gherkin) language to VS Code, including:
-* Syntax highlight
-* Basic Snippets support
-* Auto-parsing of feature steps from paths, provided in settings.json
-* Autocompletion of steps
-* Ontype validation for all the steps
-* Definitions support for all the steps parts
-* Document format support, including tables formatting
-* Supporting of many spoken languages
-* Gherkin page objects native support
-* Multiple programming languages, JS, TS, Ruby, Kotlin etc.
+VSCode extension for the [Tomato testing framework](https://tomatool.github.io/tomato/) - provides Gherkin autocomplete and validation specifically for Tomato steps.
 
-## Important extension goals are improving of steps suggestions list and minimization of user edits after step inserting:
-* Sort steps suggestions by their using count
-* Option to filter steps completions depending on words used for their defining
-* Option to automatically change all the steps parts, that require some user action, by snippets
-* Option to show several different completion variants for steps with 'or' RegEx parts (like `(a|b)`)
+## Features
 
-![](https://raw.githubusercontent.com/alexkrechik/VSCucumberAutoComplete/master/gclient/img/vscode.gif)
-## How to use:
-1. Open your app in VS Code
-2. Install `cucumberautocomplete` extension
-3. In the opened app root create (if absent) .vscode folder with settings.json file or just run ```mkdir .vscode && touch .vscode/settings.json```
-4. Add all the needed settings to the settings.json file
-5. Reload app to apply all the extension changes
-6. To get autocomplete working, `strings` var of `editor.quickSuggestions` setting should be set to true (because by default `string` suggestions will not appear)
+- **Autocomplete**: Get intelligent suggestions for all Tomato step definitions
+- **Validation**: Warnings for any step that doesn't match a valid Tomato pattern
+- **Syntax Highlighting**: Full Gherkin syntax support
+- **Formatting**: Document formatting including table alignment
+- **Multi-language**: Support for Gherkin keywords in many spoken languages
 
-## Settings:
+## Supported Step Categories
 
-### Basic settings example:
-```javascript
+This extension provides autocomplete and validation for all Tomato step modules:
+
+### HTTP
+- Set headers, query params, request bodies (raw/JSON/form)
+- Send requests with various HTTP methods
+- Assert status codes, headers, body content, JSON paths, response times
+
+### Redis
+- String values with TTL, JSON values, hashes, lists, sets
+- Increment/decrement operations
+- Assertions on existence, values, TTL, cardinality
+
+### PostgreSQL
+- Insert rows via data tables
+- Assert table contents, row counts, emptiness
+- Execute raw SQL or from files
+
+### Kafka
+- Topic creation with partition specification
+- Publish messages (text/JSON) with optional keys
+- Consume and assert message receipt, order, headers
+
+### WebSocket
+- Connect/disconnect with optional headers
+- Send text/JSON messages
+- Assert connection state, message receipt, counts, content
+
+### Shell
+- Set environment variables and working directories
+- Execute commands with timeout specifications
+- Assert exit codes, stdout/stderr content, file existence
+
+## Installation
+
+1. Install the extension from VS Code marketplace
+2. Open any `.feature` file
+3. Start typing after a Gherkin keyword (`Given`, `When`, `Then`, `And`, `But`) to see suggestions
+
+## Example
+
+```gherkin
+Feature: API Testing with Tomato
+
+  Scenario: Test user API
+    Given set "api" request header "Content-Type" to "application/json"
+    When send "GET" request to "api" "/users/1"
+    Then "api" response status should be "200"
+    And "api" response JSON "name" should exist
+```
+
+Invalid steps will show a warning:
+
+```gherkin
+  Given I do something invalid  # Warning: Unknown tomato step
+```
+
+## Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `tomato.formatConfOverride` | Override formatting indentation | `{}` |
+| `tomato.onTypeFormat` | Enable on-type formatting | `false` |
+| `tomato.skipDocStringsFormat` | Skip formatting of doc strings | `false` |
+
+### Quick Suggestions
+
+For autocomplete to work inside strings, add this to your settings:
+
+```json
 {
-    "cucumberautocomplete.steps": [
-        "test/features/step_definitions/*.js",
-        "node_modules/qa-lib/src/step_definitions/*.js"
-    ],
-    "cucumberautocomplete.strictGherkinCompletion": true
-}
-```
-
-### All the settings description:
-**`cucumberautocomplete.steps`** - Glob-style path or array of glob-style paths to the gherkin steps files.
-All the files, that match path provided, will be handled by the extension. So, ideally, this path should be as strict as possible (ex. `test/features/step_definitions/*.steps.js` is better then `test/**/*.steps.js` and much better then `**/*.steps.js`)
-The Node will watch steps files for change and will automatically update steps in them.
-All the paths are relative to the app root.
-
-**`cucumberautocomplete.syncfeatures`** - Will get steps using count from the glob-style path.
-Same with the `steps` setting - this path should be as strict as possible.
-
-**`cucumberautocomplete.strictGherkinCompletion`** - Strict comparing of declaration function and gherkin word.
-For ex. if step definition is `When(/I do something/)` - in case of `strictGherkinCompletion` is `true` - after typing `Given I` this step will not be shown in the suggestion list.
-In case of some non-gherkin steps definition usage (ex. `new Step('I do something')`) `strictGherkinCompletion` should be set to `false` - no steps suggestions will be shown otherwise.
-
-**`cucumberautocomplete.strictGherkinValidation`** - Compare step body and gherkin word during steps validation.
-Sometimes, it's useful to suggest only steps, that strictly equals by gherkin word, but show no error in case if gherkin word is using inproperly, so this option was separated from the `strictGherkinCompletion`.
-
-**`cucumberautocomplete.smartSnippets`** - Extension will try to change all the steps parts, that requires some user input (ex. .*, ([a-z]+), \\w{1,3}) to snippets.
-This option could speed up new steps adding up to several times. Try it ;)
-
-**`cucumberautocomplete.stepsInvariants`** - Show all the 'or' steps parts as separate suggestions (ex. show `I use a` and `I use b` steps suggestions for the `Given(/I use (a|b)/)` step. It also could help to speed up the new steps adding.
-
-**`cucumberautocomplete.customParameters`** - Change some steps RegEx parts depending on array of 'parameter' - 'value' key pairs. Parameter could be string or RegEx object.
-This setting will be applied before the steps getting.
-For ex. to get step from the py expression `@given(u'I do something')` we could use the next parameters:
-```
-"cucumberautocomplete.customParameters": [
-        {
-            "parameter":"(u'",
-            "value":"('"
-        }
-    ],
-```
-After this, the current expression will be handled as `@given('I do something')`, so the extension would be able to get `'I do something'` step. 
-
-**`cucumberautocomplete.pages`** - Object, which consists of 'page name' => 'page object file path' pairs
-It is allowing to handle some very specific case of page objects usage in the gherkin steps.
-
-**`cucumberautocomplete.skipDocStringsFormat`** - Skip format of strings, that placed between ''' or \"\"\".
-
-**`cucumberautocomplete.formatConfOverride`** - Override some formatting via format conf strings = {[key: String]: num | 'relative' | 'relativeUp' }, where key - beggining of the string, num - numeric value of indents, 'relative' (same indent value as the next line), or 'relativeUp' (same as the previous line).
-Example:
-```
-"cucumberautocomplete.formatConfOverride": {
-        "And": 3,
-        "But": "relative",
-    },
-```
-Also, some new words (in the case of non-English languages using) could be added. Example:
-```
-"cucumberautocomplete.formatConfOverride": {
-        "Característica": 3,
-        "Cuando": "relative",
-    },
-```
-Default format conf is:
-```
-{
-    'Ability': 0,
-    'Business Need': 0,
-    'Feature:': 0,
-    'Scenario:': 1,
-    'Background:': 1,
-    'Scenario Outline:': 1,
-    'Examples:': 2,
-    'Given': 2,
-    'When': 2,
-    'Then': 2,
-    'And': 2,
-    'But': 2,
-    '*': 2,
-    '|': 3,
-    '"""': 3,
-    '#': 'relative',
-    '@': 'relative',
-};
-```
-
-
-**`cucumberautocomplete.onTypeFormat`** - Enable ontype formattings (activating after pressing on space, @ and : keys)"
-
-**`cucumberautocomplete.gherkinDefinitionPart`** - Provide step definition name part of regex(ex. '@(given|when|then|step)\\(' in case of python-like steps.
-All the 'definition' words (usually they are gherkin words, but some other words also could be used) should be placed into the braces.
-
-**`cucumberautocomplete.stepRegExSymbol`** - Provide step regex symbol. Ex. it would be \"'\" for When('I do something') definition
-By default, all the `' ' "` symbols will be used do define start and the end of the regex. But, sometimes, we needs to use some other symbol (ex. `\\`) or we should exclude some default symbol (ex. use `'` only).
-
-**`cucumberautocomplete.pureTextSteps`** - Some frameworks using gherkin steps as a text with just support for the cucumber expression instead of RegExp. This differs from the default extension behaviour, example:
-`When('I give 5$ and * items')` step would be handled as `/I give 5$ and * items/` RegExp without this option enabled and as `/^I give 5\$ and \* items$/` RegExp with it (`^` and `$` symbols were added to the reg ex and also all the special regex symbols were handled as regular text symbols).
-
-### Using all the setting available example:
-```javascript
-{
-    "cucumberautocomplete.steps": [
-        "test/features/step_definitions/*.js",
-        "node_modules/qa-lib/src/step_definitions/*.js"
-    ],
-    "cucumberautocomplete.syncfeatures": "test/features/*feature",
-    "cucumberautocomplete.strictGherkinCompletion": true,
-    "cucumberautocomplete.strictGherkinValidation": true,
-    "cucumberautocomplete.smartSnippets": true,
-    "cucumberautocomplete.stepsInvariants": true,
-    "cucumberautocomplete.customParameters": [
-        {
-            "parameter":"{ab}",
-            "value":"(a|b)"
-        },
-        {
-            "parameter":/\{a.*\}/,
-            "value":"a"
-        },
-    ],
-    "cucumberautocomplete.pages": {
-        "users": "test/features/page_objects/users.storage.js",
-        "pathes": "test/features/page_objects/pathes.storage.js",
-        "main": "test/features/support/page_objects/main.page.js"
-    },
-    "cucumberautocomplete.skipDocStringsFormat": true,
-    "cucumberautocomplete.formatConfOverride": {
-        "And": 3,
-        "But": "relative",
-    },
-    "cucumberautocomplete.onTypeFormat": true,
     "editor.quickSuggestions": {
         "comments": false,
         "strings": true,
         "other": true
-    },
-    "cucumberautocomplete.gherkinDefinitionPart": "(Given|When|Then)\\(",
-    "cucumberautocomplete.stepRegExSymbol": "'",
-    "cucumberautocomplete.pureTextSteps": true
+    }
 }
 ```
-#### Issues
-Feel free to create app issues on [GitHub](https://github.com/alexkrechik/VSCucumberAutoComplete/issues)
 
-#### Thank you
-If this plugin was helpful for you, you could give it a ★ Star on [GitHub](https://github.com/alexkrechik/VSCucumberAutoComplete)
+## Documentation
+
+For the complete list of available step definitions, see the [Tomato Steps Documentation](https://tomatool.github.io/tomato/steps.html).
+
+## Issues
+
+Feel free to create issues on [GitHub](https://github.com/tomatool/extension/issues)
+
+## License
+
+MIT

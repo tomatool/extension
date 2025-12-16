@@ -1,6 +1,3 @@
-import * as glob from 'glob';
-import * as fs from 'fs';
-
 import {
     createConnection,
     TextDocuments,
@@ -26,9 +23,8 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 
 import { format, clearText } from './format';
 import StepsHandler from './steps.handler';
-import PagesHandler from './pages.handler';
-import { getOSPath, clearGherkinComments } from './util';
-import { Settings, BaseSettings } from './types';
+import { clearGherkinComments } from './util';
+import { Settings } from './types';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -40,17 +36,12 @@ const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 
-//Path to the root of our workspace
-let workspaceRoot: string;
 // Object, which contains current configuration
 let globalSettings: Settings | undefined;
 // Elements handlers
 let stepsHandler: StepsHandler;
-let pagesHandler: PagesHandler;
 
 connection.onInitialize((params: InitializeParams) => {
-    workspaceRoot = params.rootPath || '';
-
     const capabilities = params.capabilities;
 
     // Does the client support the `workspace/configuration` request?
@@ -103,37 +94,44 @@ connection.onInitialized(() => {
             connection.console.log('Workspace folder change event received.');
         });
     }
+
+    // Initialize the steps handler with hardcoded tomato steps
+    initStepsHandler();
 });
 
 async function getSettings(forceReset?: boolean) {
     if (!globalSettings || forceReset) {
         const baseSettings = await connection.workspace.getConfiguration({
-            section: 'cucumberautocomplete'
+            section: 'tomato'
         });
         globalSettings = getSettingsFromBase(baseSettings);
     }
     return globalSettings;
 }
 
-function shouldHandleSteps(settings: Settings) {
-    const s = settings.steps;
-    return s && s.length ? true : false;
+function getSettingsFromBase(baseSettings: Partial<Settings>): Settings {
+    return {
+        steps: [], // Not used - steps are hardcoded
+        pages: {}, // Not used
+        formatConfOverride: baseSettings.formatConfOverride || {},
+        onTypeFormat: baseSettings.onTypeFormat || false,
+        skipDocStringsFormat: baseSettings.skipDocStringsFormat || false,
+    };
 }
 
-function shouldHandlePages(settings: Settings) {
-    const p = settings.pages;
-    return p && Object.keys(p).length ? true : false;
-}
+async function initStepsHandler() {
+    const settings: Settings = {
+        steps: [],
+        pages: {},
+    };
+    stepsHandler = new StepsHandler(settings);
 
-function pagesPosition(line: string, char: number, settings: Settings) {
-    if (
-        shouldHandlePages(settings) &&
-    pagesHandler &&
-    pagesHandler.getFeaturePosition(line, char)
-    ) {
-        return true;
-    } else {
-        return false;
+    // Try to load steps dynamically from tomato CLI
+    try {
+        await stepsHandler.loadDynamicSteps();
+        connection.console.log('Tomato steps loaded successfully');
+    } catch (err) {
+        connection.console.error(`Failed to load dynamic steps: ${err}`);
     }
 }
 
@@ -141,132 +139,42 @@ async function revalidateAllDocuments() {
     connection.languages.diagnostics.refresh();
 }
 
-function watchStepsFiles(settings: Settings) {    
-    settings.steps.forEach((path) => {
-        glob
-            .sync(workspaceRoot + '/' + path, { ignore: '.gitignore' })
-            .forEach((f) => {
-                fs.unwatchFile(f);
-                fs.watchFile(f, async () => {
-                    const settings = await getSettings();
-                    populateHandlers(settings);
-                    revalidateAllDocuments();
-                });
-            });
-    });
-}
-
-function getStepsArray(steps: BaseSettings['steps']) {
-    // Set empty array as steps if they were not provided
-    if (!steps) {
-        return [];
-    } 
-    if (Array.isArray(steps)) {
-        return steps;
-    }
-    return [steps];
-}
-
-function getSettingsFromBase(baseSettings: BaseSettings) {
-    const settings: Settings = {
-        ...baseSettings,
-        steps: getStepsArray(baseSettings.steps),
-        pages: baseSettings.pages || {},
-    };
-    return settings;
-}
-
-function initStepsAndPagesSetup(settings: Settings) {
-    watchStepsFiles(settings);
-    initHandlers(settings);
-    populateHandlers(settings);
-    validateStepsConfiguration(settings);
-}
-
-function validateStepsConfiguration(settings: Settings) {
-    const { steps } = settings;
-    if (shouldHandleSteps(settings)) {
-        const sFile = '.vscode/settings.json';
-        const diagnostics = stepsHandler.validateConfiguration(
-            sFile,
-            steps,
-            workspaceRoot
-        );
-        connection.sendDiagnostics({
-            uri: getOSPath(workspaceRoot + '/' + sFile),
-            diagnostics,
-        });
-    }
-}
-
-connection.onDidChangeConfiguration(async (change) => {
-    const settings = await getSettings(true);
-    // TODO - should we check that our settings were changed before do this?
-    initStepsAndPagesSetup(settings);
+connection.onDidChangeConfiguration(async () => {
+    await getSettings(true);
     revalidateAllDocuments();
 });
 
-function initHandlers(settings: Settings) {
-    if (shouldHandleSteps(settings)) {
-        stepsHandler = new StepsHandler(workspaceRoot, settings);
-    }
-    if (shouldHandlePages(settings)) {
-        pagesHandler = new PagesHandler(workspaceRoot, settings);
-    }
-}
-
-function populateHandlers(settings: Settings) {
-    if (shouldHandleSteps(settings)) {
-        stepsHandler?.populate(workspaceRoot, settings.steps);
-    }
-    if (shouldHandlePages(settings)) {
-        pagesHandler?.populate(workspaceRoot, settings.pages);
-    }
-}
-
 documents.onDidOpen(async () => {
-    const settings = await getSettings(true);
-    initStepsAndPagesSetup(settings);
+    if (!stepsHandler) {
+        initStepsHandler();
+    }
 });
 
 connection.onCompletion(
     async (position: TextDocumentPositionParams) => {
-        const settings = await getSettings();
         const textDocument = documents.get(position.textDocument.uri);
         const text = textDocument?.getText() || '';
         const line = text.split(/\r?\n/g)[position.position.line];
-        const char = position.position.character;
-        if (pagesPosition(line, char, settings) && pagesHandler) {
-            return pagesHandler.getCompletion(line, position.position);
-        }
-        if (shouldHandleSteps(settings) && stepsHandler) {
+
+        if (stepsHandler) {
             return stepsHandler.getCompletion(line, position.position.line, text);
         }
+        return null;
     }
 );
 
 connection.onCompletionResolve((item: CompletionItem) => {
-    if (~item.data.indexOf('step')) {
+    if (stepsHandler && ~item.data.indexOf('step')) {
         return stepsHandler.getCompletionResolve(item);
-    }
-    if (~item.data.indexOf('page')) {
-        return pagesHandler.getCompletionResolve(item);
     }
     return item;
 });
 
-function validate(text: string, settings: Settings) {
+function validate(text: string) {
     return text.split(/\r?\n/g).reduce((res, line, i) => {
         let diagnostic;
-        if (
-            shouldHandleSteps(settings) &&
-      stepsHandler &&
-      (diagnostic = stepsHandler.validate(line, i, text))
-        ) {
+        if (stepsHandler && (diagnostic = stepsHandler.validate(line, i, text))) {
             res.push(diagnostic);
-        } else if (shouldHandlePages(settings) && pagesHandler) {
-            const pagesDiagnosticArr = pagesHandler.validate(line, i);
-            res = res.concat(pagesDiagnosticArr);
         }
         return res;
     }, [] as Diagnostic[]);
@@ -275,9 +183,8 @@ function validate(text: string, settings: Settings) {
 connection.languages.diagnostics.on(async (params) => {
     const document = documents.get(params.textDocument.uri);
     if (document !== undefined) {
-        const settings = await getSettings();
         const text = document.getText();
-        const diagnostics = validate(clearGherkinComments(text), settings);
+        const diagnostics = validate(clearGherkinComments(text));
         return {
             kind: DocumentDiagnosticReportKind.Full,
             items: diagnostics,
@@ -293,17 +200,13 @@ connection.languages.diagnostics.on(async (params) => {
 });
 
 connection.onDefinition(async (position: TextDocumentPositionParams) => {
-    const settings = await getSettings();
     const textDocument = documents.get(position.textDocument.uri);
     const text = textDocument?.getText() || '';
     const line = text.split(/\r?\n/g)[position.position.line];
-    const char = position.position.character;
     const pos = position.position;
     const { uri } = position.textDocument;
-    if (pagesPosition(line, char, settings) && pagesHandler) {
-        return pagesHandler.getDefinition(line, char);
-    }
-    if (shouldHandleSteps(settings) && stepsHandler) {
+
+    if (stepsHandler) {
         return stepsHandler.getDefinition(line, text);
     }
     return Location.create(uri, Range.create(pos, pos));

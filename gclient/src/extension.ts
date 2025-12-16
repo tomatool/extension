@@ -38,8 +38,8 @@ export function activate(context: ExtensionContext) {
 
     // Create the language client and start the client.
     client = new LanguageClient(
-        'cucumberautocomplete-client',
-        'Cucumber auto complete plugin',
+        'tomato-autocomplete',
+        'Tomato Gherkin Autocomplete',
         serverOptions,
         clientOptions
     );
